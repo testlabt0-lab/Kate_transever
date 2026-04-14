@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>تسجيل الدخول</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 via-green-50 to-teal-50 p-4">
+  <div class="w-full max-w-md space-y-6">
+    <div class="text-center space-y-2">
+      <div class="flex justify-center">
+        <div class="p-4 bg-emerald-600 rounded-2xl shadow-lg">
+          <svg class="h-10 w-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
+          </svg>
+        </div>
+      </div>
+      <h1 class="text-3xl font-bold text-gray-900">نظام تصدير القات</h1>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-xl p-6">
+      <h2 class="text-xl font-bold text-center mb-4">تسجيل الدخول</h2>
+
+      <form id="loginForm" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium mb-1">اسم المستخدم</label>
+          <input type="text" name="u" value="admin" required class="w-full h-11 px-3 border rounded-lg">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1">كلمة المرور</label>
+          <input type="password" name="p" value="admin123" required class="w-full h-11 px-3 border rounded-lg">
+        </div>
+
+        <div class="text-center text-sm bg-gray-50 rounded-lg p-3">
+          <span class="text-emerald-600 font-bold">admin</span> / <span class="text-emerald-600 font-bold">admin123</span>
+        </div>
+
+        <div id="error" class="hidden text-center text-red-600 bg-red-50 rounded-lg p-3"></div>
+        <div id="debug" class="text-xs bg-blue-50 rounded-lg p-3 font-mono whitespace-pre-wrap max-h-32 overflow-auto"></div>
+
+        <button type="submit" class="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg">
+          دخول
+        </button>
+      </form>
+
+      <div class="mt-4 text-center text-xs text-gray-400">
+        PID: <span id="pid"></span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const PID = 'P-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    document.getElementById('pid').textContent = PID;
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const form = e.target;
+      const u = form.u.value.trim();
+      const p = form.p.value.trim();
+      const now = Date.now();
+      const uniqueUrl = '/api/x-auth?t=' + now + '&r=' + Math.random() + '&pid=' + PID;
+
+      document.getElementById('debug').textContent = 'جاري الإرسال...\nURL: ' + uniqueUrl;
+      document.getElementById('error').classList.add('hidden');
+
+      try {
+        const res = await fetch(uniqueUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-PID': PID,
+            'X-Time': String(now)
+          },
+          body: JSON.stringify({ u, p, pid: PID, time: now })
+        });
+
+        const data = await res.json();
+
+        document.getElementById('debug').textContent =
+          'PID: ' + PID + '\n' +
+          'RESPONSE ID: ' + data.id + '\n' +
+          'TS: ' + data.ts + '\n' +
+          'OK: ' + data.ok + '\n\n' +
+          JSON.stringify(data, null, 2);
+
+        if (data.ok && data.token) {
+          localStorage.setItem('session_token', data.token);
+          localStorage.setItem('user', JSON.stringify(data.user));
+          window.location.replace('/dashboard');
+        } else {
+          document.getElementById('error').textContent = data.error || 'فشل';
+          document.getElementById('error').classList.remove('hidden');
+        }
+      } catch (err) {
+        document.getElementById('error').textContent = 'خطأ: ' + err;
+        document.getElementById('error').classList.remove('hidden');
+      }
+    });
+  </script>
+</body>
+</html>
