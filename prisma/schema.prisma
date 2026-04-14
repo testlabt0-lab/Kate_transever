@@ -1,0 +1,960 @@
+// This is your Prisma schema file
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== Enums ====================
+
+enum Role {
+  ADMIN
+  WORKER
+}
+
+enum ShipmentStatus {
+  PENDING
+  DELIVERED
+}
+
+enum PaymentDirection {
+  FROM_AGENT    // الوكيل سدد أجرة
+  TO_AGENT      // رجعنا للوكيل مبلغ
+}
+
+// ==================== Models ====================
+
+/// مستخدمي النظام
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String
+  role      Role     @default(WORKER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shipments Shipment[] @relation("UserShipments")
+
+  @@map("users")
+}
+
+/// المزارعين (المرسلين)
+model Farmer {
+  id        String   @id @default(cuid())
+  name      String   @unique // الاسم المختصر
+  fullName  String?  // الاسم الكامل / الاسم المرسل به
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shipmentItems      ShipmentItem[]         @relation("FarmerShipmentItems")
+  rawakibDistributions RawakibDistribution[] @relation("FarmerRawakib")
+
+  @@map("farmers")
+}
+
+/// الوكلاء (المستلمين)
+model Agent {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  phone     String?
+  balance   Float    @default(0) // الرصيد: المبلغ المتبقي عليه (أجرة لم تُسدد)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shipmentItems ShipmentItem[]  @relation("AgentShipmentItems")
+  payments      Payment[]       @relation("AgentPayments")
+  timers        DeliveryTimer[] @relation("AgentTimers")
+
+  @@map("agents")
+}
+
+/// الناقلين
+model Transporter {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shipments Shipment[] @relation("TransporterShipments")
+
+  @@map("transporters")
+}
+
+/// الموصلين (من يستلمون القات لتوصيله للوكلاء)
+model DeliveryPerson {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shipments Shipment[] @relation("DeliveryPersonShipments")
+
+  @@map("delivery_persons")
+}
+
+/// أنواع القات (مع أجرة التوصيل لكل حبة)
+model KhatType {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  feePerPiece  Float    @default(0) // أجرة التوصيل لكل حبة
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  khatDetails KhatDetail[] @relation("KhatTypeDetails")
+
+  @@map("khat_types")
+}
+
+/// الشحنات
+model Shipment {
+  id        String         @id @default(cuid())
+  date      DateTime       @default(now())
+  weekDay   String?        // يوم الأسبوع بالعربية (الأحد، الاثنين، ...)
+  status    ShipmentStatus @default(PENDING)
+  notes     String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  userId       String
+  user         User        @relation("UserShipments", fields: [userId], references: [id])
+  transporterId String?
+  transporter   Transporter? @relation("TransporterShipments", fields: [transporterId], references: [id])
+  deliveryPersonId String?
+  deliveryPerson   DeliveryPerson? @relation("DeliveryPersonShipments", fields: [deliveryPersonId], references: [id])
+  items ShipmentItem[] @relation("ShipmentItems")
+  timers DeliveryTimer[] @relation("ShipmentTimers")
+
+  @@map("shipments")
+}
+
+/// عناصر الشحنة (كل مزارع → وكيل)
+model ShipmentItem {
+  id           String   @id @default(cuid())
+  farmerAlias  String?  // الاسم المرسل به
+  totalPieces  Int      @default(0) // إجمالي الحبات
+  totalFee     Float    @default(0) // إجمالي الأجرة
+  numberOfBags Int      @default(1) // عدد العدل (الحاويات)
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // حقول التتبع والاستلام
+  receivedBy      String?  // الشخص الذي استلم القات من المزارع
+  receivedAt      DateTime? // وقت الاستلام من المزارع
+  deliveryStatus  DeliveryStatus @default(PENDING) // حالة التسليم
+
+  // حقول العناصر المحايدة/المفقودة
+  isIsolated      Boolean   @default(false) // هل العنصر محايد (لم يصل)
+  isolatedAt      DateTime? // متى تم تحييد العنصر
+  isolationReason String?   // سبب التحييد
+  resolvedAt      DateTime? // متى تم حل المشكلة
+  resolutionNotes String?   // ملاحظات الحل
+  isolatedBy      String?   // من قام بالتحييد
+
+  shipmentId String
+  farmerId   String
+  agentId    String
+
+  shipment Shipment @relation("ShipmentItems", fields: [shipmentId], references: [id], onDelete: Cascade)
+  farmer   Farmer   @relation("FarmerShipmentItems", fields: [farmerId], references: [id])
+  agent    Agent    @relation("AgentShipmentItems", fields: [agentId], references: [id])
+
+  khatDetails KhatDetail[] @relation("ItemKhatDetails")
+
+  @@map("shipment_items")
+}
+
+enum DeliveryStatus {
+  PENDING      // معلق - لم يتم الاستلام بعد
+  RECEIVED     // تم الاستلام من المزارع
+  IN_TRANSIT   // في الطريق
+  DELIVERED    // تم التسليم للوكيل
+}
+
+/// تفاصيل القات (أنواع متعددة لكل عنصر)
+model KhatDetail {
+  id           String   @id @default(cuid())
+  khatTypeId   String
+  pieces       Int      @default(0)
+  feePerPiece  Float    @default(0)
+  totalFee     Float    @default(0) // pieces × feePerPiece
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  shipmentItemId String
+
+  shipmentItem ShipmentItem @relation("ItemKhatDetails", fields: [shipmentItemId], references: [id], onDelete: Cascade)
+  khatType     KhatType     @relation("KhatTypeDetails", fields: [khatTypeId], references: [id])
+
+  @@map("khat_details")
+}
+
+/// تسديدات الوكلاء
+model Payment {
+  id          String           @id @default(cuid())
+  amount      Float            @default(0)
+  direction   PaymentDirection
+  description String?
+  date        DateTime         @default(now())
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  agentId String
+
+  agent Agent @relation("AgentPayments", fields: [agentId], references: [id])
+
+  @@map("payments")
+}
+
+/// المصاريف
+model Expense {
+  id          String              @id @default(cuid())
+  description String
+  amount      Float               @default(0)
+  category    ExpenseCategory     @default(OTHER)
+  date        DateTime            @default(now())
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@map("expenses")
+}
+
+enum ExpenseCategory {
+  SUPPLIES  // مستلزمات
+  SALARY    // رواتب
+  OTHER     // أخرى
+}
+
+/// المعاملات المالية (ديون وتسديدات)
+model Transaction {
+  id          String              @id @default(cuid())
+  amount      Float               @default(0)
+  type        TransactionType
+  actorType   ActorType
+  actorId     String
+  actorName   String              // اسم الممثل (للعرض السريع)
+  description String?
+  date        DateTime            @default(now())
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@map("transactions")
+}
+
+enum TransactionType {
+  DEBT     // دين / مستحق
+  PAYMENT  // دفعة / تسديد
+}
+
+enum ActorType {
+  FARMER
+  AGENT
+}
+
+/// سجل النشاطات (للتتبع والمساءلة)
+model ActivityLog {
+  id          String       @id @default(cuid())
+  action      Action       // نوع الإجراء
+  entityType  String       // نوع الكيان (farmer, agent, shipment, etc.)
+  entityId    String       // معرف الكيان
+  description String       // وصف النشاط
+  oldData     String?      // البيانات القديمة (JSON)
+  newData     String?      // البيانات الجديدة (JSON)
+  userId      String       // المستخدم الذي قام بالإجراء
+  createdAt   DateTime     @default(now())
+
+  @@map("activity_logs")
+}
+
+enum Action {
+  CREATE   // إنشاء
+  UPDATE   // تعديل
+  DELETE   // حذف
+  CONFIRM  // تأكيد
+}
+
+/// مؤقتات تسليم القات (Countdown Timers)
+model DeliveryTimer {
+  id              String         @id @default(cuid())
+  title           String         // عنوان المؤقت
+  description     String?        // وصف إضافي
+  targetDateTime  DateTime       // موعد التسليم المستهدف
+  status          TimerStatus    @default(ACTIVE)
+  notified        Boolean        @default(false) // هل تم الإشعار؟
+  completedAt     DateTime?      // وقت الإكمال
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  // يمكن ربط المؤقت بوكيل (اختياري)
+  agentId         String?
+  agent           Agent?         @relation("AgentTimers", fields: [agentId], references: [id])
+
+  // يمكن ربط المؤقت بشحنة (اختياري)
+  shipmentId      String?
+  shipment        Shipment?      @relation("ShipmentTimers", fields: [shipmentId], references: [id])
+
+  @@map("delivery_timers")
+}
+
+enum TimerStatus {
+  ACTIVE      // نشط - المؤقت يعمل
+  PAUSED      // متوقف مؤقتاً
+  COMPLETED   // مكتمل
+  CANCELLED   // ملغي
+}
+
+/// المنبهات والتذكيرات
+model Reminder {
+  id              String           @id @default(cuid())
+  title           String           // عنوان المنبه
+  description     String?          // وصف المنبه
+  type            ReminderType     // نوع المنبه
+  priority        ReminderPriority @default(NORMAL)
+  reminderDateTime DateTime        // وقت المنبه
+  repeatType      RepeatType       @default(NONE) // نوع التكرار
+  repeatInterval  Int?             // فترة التكرار (بالأيام)
+  nextReminderAt  DateTime?        // موعد المنبه القادم (للتكرار)
+  status          ReminderStatus   @default(PENDING)
+  notified        Boolean          @default(false) // هل تم الإشعار؟
+  snoozedUntil    DateTime?        // تم تأجيله إلى
+  completedAt     DateTime?        // وقت الإكمال
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@map("reminders")
+}
+
+enum ReminderType {
+  PURCHASE      // شراء شيء
+  PAYMENT       // دفع مبلغ
+  DELIVERY      // تسليم
+  MEETING       // موعد/اجتماع
+  CALL          // اتصال
+  GENERAL       // عام
+  MAINTENANCE   // صيانة
+  SUPPLIES      // مستلزمات
+}
+
+enum ReminderPriority {
+  LOW       // منخفضة
+  NORMAL    // عادية
+  HIGH      // عالية
+  URGENT    // عاجلة
+}
+
+enum RepeatType {
+  NONE        // بدون تكرار
+  DAILY       // يومي
+  WEEKLY      // أسبوعي
+  MONTHLY     // شهري
+  YEARLY      // سنوي
+  CUSTOM      // مخصص
+}
+
+enum ReminderStatus {
+  PENDING     // في الانتظار
+  COMPLETED   // مكتمل
+  SNOOZED     // مؤجل
+  CANCELLED   // ملغي
+}
+
+// ==================== نظام العناصر المحايدة ====================
+
+/// تذكيرات العناصر المحايدة/المفقودة
+model IsolatedItemReminder {
+  id              String        @id @default(cuid())
+  shipmentItemId  String        // معرف عنصر الشحنة المحايد
+  remindAt        DateTime      // وقت التذكير التالي
+  intervalHours   Int           @default(4) // فترة التذكير بالساعات
+  isActive        Boolean       @default(true) // هل التذكير نشط
+  reminderCount   Int           @default(0) // عدد التذكيرات المرسلة
+  lastRemindedAt  DateTime?     // آخر تذكير
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("isolated_item_reminders")
+}
+
+// ==================== نظام رواكب الميش ====================
+
+/// حجم الراكوبة
+enum RawakibSize {
+  LARGE    // كبيرة
+  MEDIUM   // متوسطة
+  SMALL    // صغيرة
+}
+
+/// عمليات شراء الرواكب
+model RawakibPurchase {
+  id              String        @id @default(cuid())
+  date            DateTime      @default(now())
+  supplierName    String?       // اسم المورد
+  notes           String?       // ملاحظات
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // تفاصيل المشتريات (يمكن أن تكون متعددة الأحجام)
+  items           RawakibPurchaseItem[]
+
+  // إجماليات
+  totalQuantity   Int           @default(0)   // إجمالي الكمية
+  totalCost       Float         @default(0)   // إجمالي التكلفة
+
+  @@map("rawakib_purchases")
+}
+
+/// عناصر شراء الرواكب (لكل حجم)
+model RawakibPurchaseItem {
+  id              String        @id @default(cuid())
+  purchaseId      String
+  size            RawakibSize   // الحجم: كبير، متوسط، صغير
+  quantity        Int           @default(0)   // الكمية
+  pricePerPiece   Float         @default(0)   // سعر الحبة الواحدة
+  totalCost       Float         @default(0)   // التكلفة الإجمالية
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  purchase        RawakibPurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  @@map("rawakib_purchase_items")
+}
+
+/// توزيع الرواكب على المزارعين
+model RawakibDistribution {
+  id              String              @id @default(cuid())
+  date            DateTime            @default(now())
+  farmerId        String
+  paymentType     RawakibPaymentType  @default(CASH) // نقداً أو دين
+  notes           String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  farmer          Farmer              @relation("FarmerRawakib", fields: [farmerId], references: [id])
+  items           RawakibDistributionItem[]
+
+  // إجماليات
+  totalQuantity   Int                 @default(0)   // إجمالي الكمية
+  totalCost       Float               @default(0)   // إجمالي التكلفة
+  isPaid          Boolean             @default(true) // هل تم الدفع؟
+  paidAt          DateTime?           // تاريخ الدفع
+
+  @@map("rawakib_distributions")
+}
+
+/// عناصر توزيع الرواكب
+model RawakibDistributionItem {
+  id              String        @id @default(cuid())
+  distributionId  String
+  size            RawakibSize   // الحجم
+  quantity        Int           @default(0)   // الكمية
+  pricePerPiece   Float         @default(0)   // سعر الحبة
+  totalCost       Float         @default(0)   // التكلفة الإجمالية
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  distribution    RawakibDistribution @relation(fields: [distributionId], references: [id], onDelete: Cascade)
+
+  @@map("rawakib_distribution_items")
+}
+
+enum RawakibPaymentType {
+  CASH    // نقداً
+  CREDIT  // دين
+}
+
+/// مخزون الرواكب (حساب المتبقي تلقائياً)
+model RawakibInventory {
+  id              String      @id @default(cuid())
+  size            RawakibSize // الحجم
+  totalPurchased  Int         @default(0) // إجمالي المشتريات
+  totalDistributed Int        @default(0) // إجمالي التوزيعات
+  remaining       Int         @default(0) // المتبقي
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@unique([size]) // حجم واحد فقط لكل سجل
+  @@map("rawakib_inventory")
+}
+
+// ==================== نظام الإعدادات ====================
+
+/// إعدادات النظام
+model Settings {
+  id                String   @id @default(cuid())
+
+  // إعدادات عامة
+  companyName       String?  // اسم الشركة/المؤسسة
+  currency          String   @default("ريال") // العملة
+  timezone          String   @default("Asia/Aden") // المنطقة الزمنية
+  language          String   @default("ar") // اللغة
+
+  // إعدادات العرض
+  theme             String   @default("light") // light, dark, system
+  primaryColor      String   @default("emerald") // اللون الأساسي
+  fontSize          String   @default("medium") // small, medium, large
+  compactMode       Boolean  @default(false) // وضع مدمج
+
+  // إعدادات الإشعارات
+  notificationsEnabled    Boolean @default(true)
+  soundEnabled           Boolean @default(true)
+  reminderSoundEnabled   Boolean @default(true)
+  isolatedItemsAlerts    Boolean @default(true) // تنبيهات العناصر المحايدة
+  deliveryReminders      Boolean @default(true) // تذكيرات التسليم
+
+  // إعدادات الطباعة
+  printAuto             Boolean @default(false) // طباعة تلقائية
+  printHeader           String? // ترويسة الطباعة
+  printFooter           String? // تذييل الطباعة
+  printShowLogo         Boolean @default(true)
+
+  // إعدادات الشحنات
+  autoSaveShipments     Boolean @default(true) // حفظ تلقائي
+  defaultDeliveryPerson String? // الموصل الافتراضي
+  requireDeliveryConfirm Boolean @default(false) // طلب تأكيد التسليم
+
+  // إعدادات الأجرة
+  autoCalculateFee      Boolean @default(true) // حساب تلقائي للأجرة
+  feeRounding           String  @default("none") // none, up, down, nearest
+
+  // إعدادات النسخ الاحتياطي
+  autoBackup            Boolean @default(false)
+  backupInterval        Int     @default(7) // بالأيام
+  lastBackupAt          DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
+
+/// الإشعارات
+model Notification {
+  id          String             @id @default(cuid())
+  title       String             // عنوان الإشعار
+  message     String             // محتوى الإشعار
+  type        NotificationType   // نوع الإشعار
+  priority    NotificationPriority @default(NORMAL)
+
+  // معلومات إضافية
+  entityType  String?            // نوع الكيان المرتبط (shipment, agent, etc.)
+  entityId    String?            // معرف الكيان المرتبط
+  actionUrl   String?            // رابط الإجراء
+
+  // حالة الإشعار
+  isRead      Boolean   @default(false)
+  readAt      DateTime?
+  isDismissed Boolean   @default(false)
+  dismissedAt DateTime?
+
+  // جدولة
+  scheduledFor DateTime?         // مجدول للإرسال في وقت محدد
+  sentAt      DateTime?          // وقت الإرسال الفعلي
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("notifications")
+}
+
+enum NotificationType {
+  SYSTEM        // نظام
+  SHIPMENT      // شحنة
+  DELIVERY      // تسليم
+  REMINDER      // تذكير
+  PAYMENT       // دفعة
+  ALERT         // تنبيه
+  ISOLATED_ITEM // عنصر محايد
+  TIMER         // مؤقت
+}
+
+enum NotificationPriority {
+  LOW       // منخفضة
+  NORMAL    // عادية
+  HIGH      // عالية
+  URGENT    // عاجلة
+}
+
+/// سلة المحذوفات (للاستعادة)
+model TrashItem {
+  id          String   @id @default(cuid())
+  entityType  String   // نوع الكيان المحذوف
+  entityId    String   // معرف الكيان الأصلي
+  data        String   // البيانات المحذوفة (JSON)
+  deletedBy   String   // من قام بالحذف
+  deletedAt   DateTime @default(now())
+  expiresAt   DateTime // تاريخ انتهاء الصلاحية للحذف النهائي
+
+  @@map("trash_items")
+}
+
+// ==================== نظام الفواتير ====================
+
+/// الفواتير
+model Invoice {
+  id              String        @id @default(cuid())
+  invoiceNumber   String        @unique // رقم الفاتورة
+  date            DateTime      @default(now())
+  dueDate         DateTime?     // تاريخ الاستحقاق
+  status          InvoiceStatus @default(PENDING)
+
+  // معلومات الفاتورة
+  customerId      String?       // معرف العميل (وكيل أو مزارع)
+  customerType    String?       // نوع العميل (agent, farmer)
+  customerName    String        // اسم العميل
+
+  // المبالغ
+  subtotal        Float         @default(0) // المجموع الفرعي
+  tax             Float         @default(0) // الضريبة
+  discount        Float         @default(0) // الخصم
+  total           Float         @default(0) // الإجمالي
+  paidAmount      Float         @default(0) // المبلغ المدفوع
+  remainingAmount Float         @default(0) // المبلغ المتبقي
+
+  // ملاحظات
+  notes           String?
+
+  // عناصر الفاتورة
+  items           InvoiceItem[]
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("invoices")
+}
+
+/// عناصر الفاتورة
+model InvoiceItem {
+  id            String   @id @default(cuid())
+  invoiceId     String
+  description   String   // وصف العنصر
+  quantity      Int      @default(1)
+  unitPrice     Float    @default(0)
+  total         Float    @default(0)
+
+  // ربط بشحنة (اختياري)
+  shipmentId    String?
+
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("invoice_items")
+}
+
+enum InvoiceStatus {
+  DRAFT     // مسودة
+  PENDING   // معلقة
+  PAID      // مدفوعة
+  PARTIAL   // مدفوعة جزئياً
+  CANCELLED // ملغاة
+  OVERDUE   // متأخرة
+}
+
+// ==================== نظام الديون ====================
+
+/// الديون
+model Debt {
+  id              String      @id @default(cuid())
+  debtorType      String      // نوع المديون (farmer, agent, other)
+  debtorId        String      // معرف المديون
+  debtorName      String      // اسم المديون
+  amount          Float       @default(0) // المبلغ الأصلي
+  remainingAmount Float       @default(0) // المبلغ المتبقي
+  dueDate         DateTime?   // تاريخ الاستحقاق
+  status          DebtStatus  @default(PENDING)
+  description     String?
+
+  // سجل الدفعات
+  payments        DebtPayment[]
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@map("debts")
+}
+
+/// دفعات الديون
+model DebtPayment {
+  id          String   @id @default(cuid())
+  debtId      String
+  amount      Float    @default(0)
+  date        DateTime @default(now())
+  method      String?  // طريقة الدفع
+  notes       String?
+
+  debt        Debt     @relation(fields: [debtId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("debt_payments")
+}
+
+enum DebtStatus {
+  PENDING   // معلق
+  PARTIAL   // مدفوع جزئياً
+  PAID      // مدفوع بالكامل
+  CANCELLED // ملغي
+  OVERDUE   // متأخر
+}
+
+// ==================== نظام الحضور ====================
+
+/// سجل الحضور
+model Attendance {
+  id          String          @id @default(cuid())
+  userId      String
+  date        DateTime        @default(now())
+  checkIn     DateTime?       // وقت الحضور
+  checkOut    DateTime?       // وقت الانصراف
+  status      AttendanceStatus @default(PRESENT)
+  notes       String?
+
+  // معلومات الموقع
+  checkInLocation  String?    // موقع الحضور
+  checkOutLocation String?    // موقع الانصراف
+
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([userId, date])
+  @@map("attendance")
+}
+
+enum AttendanceStatus {
+  PRESENT   // حاضر
+  ABSENT    // غائب
+  LATE      // متأخر
+  LEAVE     // إجازة
+  HALF_DAY  // نصف يوم
+}
+
+// ==================== نظام الصلاحيات المتقدمة ====================
+
+/// الأدوار المخصصة
+model CustomRole {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  permissions String   // صلاحيات JSON
+  isDefault   Boolean  @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("custom_roles")
+}
+
+/// صلاحيات المستخدمين
+model UserPermission {
+  id          String   @id @default(cuid())
+  userId      String
+  permission  String   // اسم الصلاحية
+  granted     Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, permission])
+  @@map("user_permissions")
+}
+
+// ==================== نظام النسخ الاحتياطي ====================
+
+/// سجل النسخ الاحتياطي
+model Backup {
+  id          String       @id @default(cuid())
+  type        BackupType
+  status      BackupStatus @default(PENDING)
+  size        Int          @default(0) // حجم الملف بالبايت
+  path        String?      // مسار الملف
+  notes       String?
+  error       String?
+
+  createdAt   DateTime     @default(now())
+  completedAt DateTime?
+
+  @@map("backups")
+}
+
+enum BackupType {
+  FULL      // كامل
+  PARTIAL   // جزئي
+  DATA_ONLY // بيانات فقط
+}
+
+enum BackupStatus {
+  PENDING   // قيد الانتظار
+  RUNNING   // جاري
+  COMPLETED // مكتمل
+  FAILED    // فشل
+}
+
+// ==================== نظام الإشعارات المتقدمة ====================
+
+/// قوالب الإشعارات
+model NotificationTemplate {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  title       String
+  body        String
+  type        String   // sms, whatsapp, email, push
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("notification_templates")
+}
+
+/// سجل الإشعارات المرسلة
+model NotificationLog {
+  id          String   @id @default(cuid())
+  templateId  String?
+  recipient   String   // المستلم (رقم الهاتف أو البريد)
+  type        String   // sms, whatsapp, email, push
+  status      String   // sent, failed, pending
+  message     String
+  error       String?
+
+  createdAt   DateTime @default(now())
+
+  @@map("notification_logs")
+}
+
+// ==================== نظام التتبع GPS ====================
+
+/// مواقع الموصلين
+model DeliveryLocation {
+  id              String   @id @default(cuid())
+  deliveryPersonId String
+  latitude        Float
+  longitude       Float
+  accuracy        Float?   // دقة الموقع
+  speed           Float?   // السرعة
+  heading         Float?   // الاتجاه
+  battery         Int?     // نسبة البطارية
+
+  createdAt       DateTime @default(now())
+
+  @@map("delivery_locations")
+}
+
+/// سجل الرحلات
+model DeliveryTrip {
+  id              String        @id @default(cuid())
+  deliveryPersonId String
+  shipmentId      String?
+  startTime       DateTime      @default(now())
+  endTime         DateTime?
+  status          TripStatus    @default(IN_PROGRESS)
+  startLocation   String?       // موقع البداية
+  endLocation     String?       // موقع النهاية
+  distance        Float         @default(0) // المسافة بالكيلومتر
+  notes           String?
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("delivery_trips")
+}
+
+enum TripStatus {
+  IN_PROGRESS // جارية
+  COMPLETED   // مكتملة
+  CANCELLED   // ملغاة
+}
+
+// ==================== نظام الذكاء الاصطناعي ====================
+
+/// التوقعات
+model Prediction {
+  id          String          @id @default(cuid())
+  type        PredictionType
+  entityId    String?         // معرف الكيان المرتبط
+  entityType  String?         // نوع الكيان
+  prediction  String          // التوقع (JSON)
+  confidence  Float           @default(0) // نسبة الثقة
+  status      PredictionStatus @default(PENDING)
+  actualValue String?         // القيمة الفعلية (للتحقق)
+
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@map("predictions")
+}
+
+enum PredictionType {
+  DEMAND      // توقع الطلب
+  REVENUE     // توقع الإيرادات
+  DELIVERY    // توقع وقت التوصيل
+  RISK        // توقع المخاطر
+}
+
+enum PredictionStatus {
+  PENDING   // قيد المراجعة
+  CONFIRMED // مؤكد
+  REJECTED  // مرفوض
+  VERIFIED  // تم التحقق
+}
+
+/// تحليل الصور
+model ImageAnalysis {
+  id          String   @id @default(cuid())
+  imageUrl    String
+  type        String   // invoice, receipt, document
+  result      String   // نتيجة التحليل (JSON)
+  confidence  Float    @default(0)
+
+  createdAt   DateTime @default(now())
+
+  @@map("image_analyses")
+}
+
+// ==================== تقسيم الأجرة ====================
+
+/// تقسيم الأجرة
+model FeeSplit {
+  id              String   @id @default(cuid())
+  shipmentItemId  String
+  totalFee        Float    @default(0)
+
+  // تقسيم الأجرة
+  driverFee       Float    @default(0) // أجرة السائق
+  companyFee      Float    @default(0) // أجرة الشركة
+  agentFee        Float    @default(0) // عمولة الوكيل
+  otherFee        Float    @default(0) // رسوم أخرى
+
+  notes           String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("fee_splits")
+}
+
+// ==================== التحليلات ====================
+
+/// سجل التحليلات
+model Analytics {
+  id          String   @id @default(cuid())
+  date        DateTime @default(now())
+  metric      String   // اسم المقياس
+  value       Float    @default(0)
+  category    String?  // التصنيف
+  metadata    String?  // بيانات إضافية (JSON)
+
+  createdAt   DateTime @default(now())
+
+  @@map("analytics")
+}
