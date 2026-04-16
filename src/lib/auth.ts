@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { db } from '@/lib/db';
 import * as bcrypt from 'bcrypt';
 import { Role } from '@prisma/client';
+import { signToken, verifyToken } from './tokens';
 
 const SESSION_COOKIE_NAME = 'session';
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // أسبوع واحد
@@ -21,8 +22,8 @@ export async function createSession(userId: string): Promise<void> {
   const cookieStore = await cookies();
   const expiresAt = new Date(Date.now() + COOKIE_MAX_AGE * 1000);
 
-  // إنشاء رمز جلسة بسيط
-  const sessionToken = Buffer.from(`${userId}:${Date.now()}`).toString('base64');
+  // إنشاء رمز جلسة آمن
+  const sessionToken = signToken(userId);
 
   cookieStore.set(SESSION_COOKIE_NAME, sessionToken, {
     httpOnly: true,
@@ -53,8 +54,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
   }
 
   try {
-    const decoded = Buffer.from(sessionToken, 'base64').toString();
-    const [userId] = decoded.split(':');
+    const userId = verifyToken(sessionToken);
 
     if (!userId) {
       return null;

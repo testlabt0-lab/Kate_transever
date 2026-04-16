@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import * as bcrypt from 'bcrypt';
+import { signToken } from '@/lib/tokens';
 
 const ENDPOINT_ID = `V2-${Date.now()}`;
 
@@ -59,7 +60,7 @@ export async function POST(request: NextRequest) {
     }, { status: 401 });
   }
 
-  const token = Buffer.from(`${user.id}:${Date.now()}`).toString('base64');
+  const token = signToken(user.id);
 
   return NextResponse.json({
     success: true,

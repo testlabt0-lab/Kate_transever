@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import * as bcrypt from 'bcrypt';
+import { signToken } from '@/lib/tokens';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,7 +57,7 @@ export async function GET(request: NextRequest) {
       }, { status: 401, headers: { 'Cache-Control': 'no-store' } });
     }
 
-    const token = Buffer.from(`${user.id}:${Date.now()}`).toString('base64');
+    const token = signToken(user.id);
     console.log(`[${id}] SUCCESS!`);
 
     return NextResponse.json({
