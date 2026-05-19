@@ -39,7 +39,7 @@ import {
   VolumeX,
   X,
   Edit,
-  Snooze,
+  AlarmClock,
   Settings,
   Music,
   ChevronDown,
@@ -155,9 +155,9 @@ export default function TimersRemindersPage() {
   const [showAddReminder, setShowAddReminder] = useState(false);
   const [editingTimer, setEditingTimer] = useState<DeliveryTimer | null>(null);
   const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
-  const [showSnoozeDialog, setShowSnoozeDialog] = useState(false);
-  const [snoozeReminder, setSnoozeReminder] = useState<Reminder | null>(null);
-  const [snoozeMinutes, setSnoozeMinutes] = useState(10);
+  const [showAlarmClockDialog, setShowAlarmClockDialog] = useState(false);
+  const [snoozeReminder, setAlarmClockReminder] = useState<Reminder | null>(null);
+  const [snoozeMinutes, setAlarmClockMinutes] = useState(10);
 
   // Timer form
   const [timerTitle, setTimerTitle] = useState('');
@@ -494,16 +494,16 @@ export default function TimersRemindersPage() {
     }
   };
 
-  const handleSnooze = () => {
+  const handleAlarmClock = () => {
     if (!snoozeReminder) return;
 
     const snoozeTime = new Date();
     snoozeTime.setMinutes(snoozeTime.getMinutes() + snoozeMinutes);
 
     handleUpdateReminderStatus(snoozeReminder.id, 'SNOOZED', snoozeTime.toISOString());
-    setShowSnoozeDialog(false);
-    setSnoozeReminder(null);
-    setSnoozeMinutes(10);
+    setShowAlarmClockDialog(false);
+    setAlarmClockReminder(null);
+    setAlarmClockMinutes(10);
   };
 
   const resetReminderForm = () => {
@@ -1054,11 +1054,11 @@ export default function TimersRemindersPage() {
                                 variant="outline"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setSnoozeReminder(reminder);
-                                  setShowSnoozeDialog(true);
+                                  setAlarmClockReminder(reminder);
+                                  setShowAlarmClockDialog(true);
                                 }}
                               >
-                                <Snooze className="h-4 w-4" />
+                                <AlarmClock className="h-4 w-4" />
                               </Button>
                             </>
                           )}
@@ -1247,8 +1247,8 @@ export default function TimersRemindersPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Snooze Dialog */}
-        <Dialog open={showSnoozeDialog} onOpenChange={setShowSnoozeDialog}>
+        {/* AlarmClock Dialog */}
+        <Dialog open={showAlarmClockDialog} onOpenChange={setShowAlarmClockDialog}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>تأجيل المنبه</DialogTitle>
@@ -1260,7 +1260,7 @@ export default function TimersRemindersPage() {
                   <Button
                     key={minutes}
                     variant={snoozeMinutes === minutes ? 'default' : 'outline'}
-                    onClick={() => setSnoozeMinutes(minutes)}
+                    onClick={() => setAlarmClockMinutes(minutes)}
                     className={snoozeMinutes === minutes ? 'bg-emerald-600' : ''}
                   >
                     {minutes < 60 ? `${minutes} دقيقة` : `${minutes / 60} ساعة`}
@@ -1273,15 +1273,15 @@ export default function TimersRemindersPage() {
                   type="number"
                   min={1}
                   value={snoozeMinutes}
-                  onChange={(e) => setSnoozeMinutes(parseInt(e.target.value) || 10)}
+                  onChange={(e) => setAlarmClockMinutes(parseInt(e.target.value) || 10)}
                 />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowSnoozeDialog(false)}>
+              <Button variant="outline" onClick={() => setShowAlarmClockDialog(false)}>
                 إلغاء
               </Button>
-              <Button onClick={handleSnooze} className="bg-emerald-600 hover:bg-emerald-700">
+              <Button onClick={handleAlarmClock} className="bg-emerald-600 hover:bg-emerald-700">
                 تأجيل
               </Button>
             </DialogFooter>
