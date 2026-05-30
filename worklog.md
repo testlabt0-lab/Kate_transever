@@ -1635,3 +1635,15 @@ bun add @capacitor/core @capacitor/cli @capacitor/android
 3. `/src/components/notifications/notification-settings.tsx` - مكون إعدادات التنبيهات
 4. `/src/lib/sounds.ts` - مولد الأصوات باستخدام Web Audio API
 5. `/src/app/dashboard/timers-reminders/page.tsx` - تحسين صفحة المؤقتات والتذكيرات
+
+---
+## Task ID: share-shipments-agents - Developer
+### Work Task
+إضافة ميزة مشاركة شحنات القات للوكلاء المحددين في صفحة الشحنات.
+
+### Work Summary
+تم إضافة ميزة لتسهيل إرسال تقارير الشحنات للوكلاء.
+- إنشاء `ShareShipmentAgentDialog`، وهو مكون يتيح تحديد شحنة واستخراج قائمة المزارعين الذين أرسلوا كميات من القات إلى هذا الوكيل بالتحديد مع نوع القات وكميته.
+- تضمين المكون في صفحة `/dashboard/shipments` وإضافة زر "مشاركة" لكل شحنة مسجلة للقيام بالمشاركة بكل سهولة.
+- دعم المشاركة عبر الواتساب (إذا كان لدى الوكيل رقم مسجل) أو تليجرام أو النسخ للحافظة.
+- تم إصلاح أخطاء بعض الاستيرادات المفقودة في صفحات أخرى للتأكد من أن بناء التطبيق (Build) ينجح تماماً.

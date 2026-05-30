@@ -55,7 +55,7 @@ import {
   XCircle,
   Timer,
   Plane,
-  Half2,
+  Tally2,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -124,7 +124,7 @@ const statusIcons: Record<AttendanceStatus, React.ReactNode> = {
   ABSENT: <XCircle className="h-4 w-4" />,
   LATE: <Timer className="h-4 w-4" />,
   LEAVE: <Plane className="h-4 w-4" />,
-  HALF_DAY: <Half2 className="h-4 w-4" />,
+  HALF_DAY: <Tally2 className="h-4 w-4" />,
 };
 
 export default function AttendancePage() {

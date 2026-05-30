@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ShareShipmentAgentDialog } from "@/components/share-shipment-agent-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -23,6 +24,7 @@ import {
 import {
   Plus,
   Trash2,
+  Share2,
   Search,
   Package,
   Users,
@@ -201,6 +203,12 @@ export default function ShipmentsPage() {
   const [isolatedReminders, setIsolatedReminders] = useState<IsolatedReminder[]>([]);
 
   // New Shipment Dialog
+  // Share Shipment Agent Dialog
+  const [showShareAgentDialog, setShowShareAgentDialog] = useState(false);
+  const [selectedShipmentForShare, setSelectedShipmentForShare] = useState<any>(null);
+  const [selectedAgentForShare, setSelectedAgentForShare] = useState<string | null>(null);
+  const [showSelectAgentDialog, setShowSelectAgentDialog] = useState(false);
+
   const [showNewShipment, setShowNewShipment] = useState(false);
   const [shipmentItems, setShipmentItems] = useState<ShipmentItemInput[]>([]);
   const [shipmentNotes, setShipmentNotes] = useState('');
@@ -702,6 +710,34 @@ export default function ShipmentsPage() {
   };
 
   // Handle delivery confirmation
+  // ==================== Share Handlers ====================
+
+  const handleShareToAgent = (shipment: Shipment) => {
+    // Get unique agents from the shipment items
+    const agentIds = Array.from(new Set(shipment.items.map(item => item.agent?.id || item.agentId).filter(Boolean)));
+
+    if (agentIds.length === 0) {
+      toast({ title: 'تنبيه', description: 'لا يوجد وكلاء في هذه الشحنة' });
+      return;
+    }
+
+    if (agentIds.length === 1) {
+      // Only one agent, skip selection
+      setSelectedShipmentForShare(shipment);
+      setSelectedAgentForShare(agentIds[0]);
+      setShowShareAgentDialog(true);
+    } else {
+      // Multiple agents, show selection dialog
+      setSelectedShipmentForShare(shipment);
+      setShowSelectAgentDialog(true);
+    }
+  };
+
+  const handleAgentSelectedForShare = (agentId: string) => {
+    setSelectedAgentForShare(agentId);
+    setShowSelectAgentDialog(false);
+    setShowShareAgentDialog(true);
+  };
   const handleConfirmDelivery = async () => {
     if (!confirmingShipment) return;
     if (!receivedByName.trim()) {
@@ -1116,6 +1152,15 @@ export default function ShipmentsPage() {
                               </div>
                             </div>
                             <div className="flex gap-1 flex-wrap">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleShareToAgent(shipment)}
+                                className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                                title="مشاركة للوكيل"
+                              >
+                                <Share2 className="h-4 w-4" />
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -2082,6 +2127,43 @@ export default function ShipmentsPage() {
             }}
           />
         )}
+
+      {/* Share Agent Selection Dialog */}
+      <Dialog open={showSelectAgentDialog} onOpenChange={setShowSelectAgentDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>اختيار الوكيل للمشاركة</DialogTitle>
+            <DialogDescription>
+              يوجد أكثر من وكيل في هذه الشحنة، يرجى اختيار الوكيل الذي تريد مشاركة القائمة معه.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {selectedShipmentForShare && Array.from(new Set(selectedShipmentForShare.items.map((item: any) => item.agent?.id || item.agentId).filter(Boolean))).map((agentId: any) => {
+              const item = selectedShipmentForShare.items.find((i: any) => (i.agent?.id || i.agentId) === agentId);
+              const agentName = item?.agentName || item?.agent?.name;
+              return (
+                <Button
+                  key={agentId}
+                  variant="outline"
+                  className="w-full justify-start text-right h-12"
+                  onClick={() => handleAgentSelectedForShare(agentId)}
+                >
+                  <Users className="h-4 w-4 me-3 text-muted-foreground" />
+                  {agentName}
+                </Button>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Share Agent Dialog */}
+      <ShareShipmentAgentDialog
+        open={showShareAgentDialog}
+        onOpenChange={setShowShareAgentDialog}
+        shipment={selectedShipmentForShare}
+        agentId={selectedAgentForShare}
+      />
       </div>
     </DashboardLayout>
   );
